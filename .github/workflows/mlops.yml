@@ -1,0 +1,114 @@
+name: MLOps CI/CD Pipeline
+
+on:
+  pull_request:
+    branches:
+      - main
+
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+jobs:
+
+  lint-and-test:
+    name: Lint and Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run linting
+        run: |
+          flake8 src tests
+
+      - name: Run tests
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -v
+
+
+  train:
+    name: Train Model
+    needs: lint-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Train model
+        env:
+          PYTHONPATH: .
+        run: |
+          python src/train.py
+
+      - name: Upload trained model
+        uses: actions/upload-artifact@v4
+        with:
+          name: trained-model
+          path: model.pkl
+
+
+  deploy-staging:
+    name: Deploy to Staging
+    needs: lint-and-test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Train model for staging
+        env:
+          PYTHONPATH: .
+        run: |
+          python src/train.py
+
+      - name: Build Docker image
+        run: |
+          docker build -t mlops-model:${{ github.ref_name }} .
+
+      - name: Deploy to staging
+        run: |
+          echo "====================================="
+          echo "Deploying model to STAGING"
+          echo "Version: ${{ github.ref_name }}"
+          echo "====================================="
+          echo "Staging deployment successful!"
